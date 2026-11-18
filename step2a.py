@@ -39,57 +39,76 @@ def natural_sort(items):
 # 2. EXTRACT TASK AND RUN IDENTIFIERS FROM FILENAME
 # ============================================================
 
+
 def extract_run_id(filename):
 
     """
-    Extract task and optional run identifiers.
+    Extract session, task and run identifiers
+    regardless of their position in the filename.
 
     Examples:
 
-    sub-01_task-workingmemory_run-1_bold.nii.gz
-        -> task-workingmemory_run-1
+    sub-01_task-emotion_bold.nii.gz
+        -> task-emotion
 
-    sub-01_task-emotionreg_bold.nii.gz
-        -> task-emotionreg
+    sub-01_task-emotion_run-1_bold.nii.gz
+        -> task-emotion_run-1
 
-    sub-01_task-emotionreg_run-2_bold.nii.gz
-        -> task-emotionreg_run-2
+    sub-01_task-emotion_ses-A_run-2_MNI_desc_bold.nii.gz
+        -> ses-A_task-emotion_run-2
     """
 
     name = Path(filename).name
 
+    # Extract optional session identifier
+
+    ses_match = re.search(
+        r"(?:^|_)ses-([^_]+)(?:_|$)",
+        name
+    )
+
+    # Extract task identifier
+
     task_match = re.search(
-        r"(?:^|_)task-([^_]+)",
+        r"(?:^|_)task-([^_]+)(?:_|$)",
+        name
+    )
+
+    # Extract optional run identifier
+
+    run_match = re.search(
+        r"(?:^|_)run-([^_]+)(?:_|$)",
         name
     )
 
     if not task_match:
 
         raise ValueError(
-            f"No task identifier found in filename: {name}\n"
-            "Expected a filename containing task-<name>."
+            f"No task identifier found in filename: {name}"
         )
 
-    task_name = task_match.group(1)
+    # Construct standardized identifier
 
-    run_match = re.search(
-        r"(?:^|_)run-([^_]+)",
-        name
+    parts = []
+
+    if ses_match:
+
+        parts.append(
+            f"ses-{ses_match.group(1)}"
+        )
+
+    parts.append(
+        f"task-{task_match.group(1)}"
     )
 
     if run_match:
 
-        run_number = run_match.group(1)
-
-        run_id = (
-            f"task-{task_name}_run-{run_number}"
+        parts.append(
+            f"run-{run_match.group(1)}"
         )
 
-    else:
+    return "_".join(parts)
 
-        run_id = f"task-{task_name}"
-
-    return run_id
 
 
 # ============================================================
@@ -244,7 +263,7 @@ def inspect_data(data_dir):
 
                 "shape": shape,
 
-                "task": run_id.split("_run-")[0],
+                "task": f"task-{re.search(r'(?:^|_)task-([^_]+)', run_id).group(1)}",
 
                 "run_id": run_id
             }
