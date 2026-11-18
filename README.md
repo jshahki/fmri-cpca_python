@@ -1,1 +1,1 @@
-# cpca_python
+# fmri-cpca_python
