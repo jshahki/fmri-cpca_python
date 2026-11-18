@@ -38,32 +38,76 @@ def natural_sort(items):
 # 2. EXTRACT TASK AND RUN IDENTIFIERS
 # ============================================================
 
+
 def extract_run_id(filename):
+
+    """
+    Extract session, task and run identifiers
+    regardless of their position in the filename.
+
+    Examples:
+
+    sub-01_task-emotion_bold.nii.gz
+        -> task-emotion
+
+    sub-01_task-emotion_run-1_bold.nii.gz
+        -> task-emotion_run-1
+
+    sub-01_task-emotion_ses-A_run-2_MNI_desc_bold.nii.gz
+        -> ses-A_task-emotion_run-2
+    """
 
     name = Path(filename).name
 
+    # Extract optional session identifier
+
+    ses_match = re.search(
+        r"(?:^|_)ses-([^_]+)(?:_|$)",
+        name
+    )
+
+    # Extract task identifier
+
     task_match = re.search(
-        r"(?:^|_)task-([^_]+)",
+        r"(?:^|_)task-([^_]+)(?:_|$)",
+        name
+    )
+
+    # Extract optional run identifier
+
+    run_match = re.search(
+        r"(?:^|_)run-([^_]+)(?:_|$)",
         name
     )
 
     if not task_match:
+
         raise ValueError(
-            f"No task identifier found: {name}"
+            f"No task identifier found in filename: {name}"
         )
 
-    task_name = task_match.group(1)
+    # Construct standardized identifier
 
-    run_match = re.search(
-        r"(?:^|_)run-([^_]+)",
-        name
+    parts = []
+
+    if ses_match:
+
+        parts.append(
+            f"ses-{ses_match.group(1)}"
+        )
+
+    parts.append(
+        f"task-{task_match.group(1)}"
     )
 
     if run_match:
-        run_number = run_match.group(1)
-        return f"task-{task_name}_run-{run_number}"
 
-    return f"task-{task_name}"
+        parts.append(
+            f"run-{run_match.group(1)}"
+        )
+
+    return "_".join(parts)
+
 
 
 # ============================================================
@@ -174,7 +218,12 @@ def inspect_data(data_dir):
                     f"Unexpected NIfTI dimensions: {shape}"
                 )
 
-            task_name = run_id.split("_run-")[0]
+            task_match = re.search(
+                r"(?:^|_)task-([^_]+)",
+                run_id
+            )
+
+            task_name = f"task-{task_match.group(1)}"
 
             runs[run_id] = {
                 "file": nii_file,
@@ -434,6 +483,7 @@ def create_column_names(conditions):
 # 9. CREATE FIR MATRICES
 # ============================================================
 
+
 def create_fir_matrices(
     subjects,
     conditions,
@@ -450,10 +500,10 @@ def create_fir_matrices(
 
     for subject, runs in subjects.items():
 
-        print(f"\nGenerating FIR matrix for {subject}")
+        print(f"\nGenerating FIR matrices for {subject}")
 
-        run_matrices = []
-        scan_info_rows = []
+        subject_matrices[subject] = {}
+        subject_scan_info[subject] = {}
 
         for run_id, info in runs.items():
 
@@ -468,7 +518,7 @@ def create_fir_matrices(
             print(f"Scans: {nscans}")
             print(f"Conditions: {active_conditions}")
 
-            # Initialize run matrix
+            # Initialize individual run matrix
 
             G_run = np.zeros(
                 (nscans, total_columns),
@@ -509,17 +559,33 @@ def create_fir_matrices(
                             first_col + bin_index
                         ] = 1
 
-            run_matrices.append(G_run)
+            # Store individual run matrix
 
-            # Record scan information
+            subject_matrices[subject][run_id] = G_run
+
+            # Create scan information for this run
+
+            scan_info_rows = []
 
             for scan in range(nscans):
 
                 scan_info_rows.append({
 
-                    "row": len(scan_info_rows),
+                    "row": scan,
 
                     "subject": subject,
+
+                    "session": (
+                        re.search(
+                            r"(?:^|_)ses-([^_]+)",
+                            run_id
+                        ).group(1)
+                        if re.search(
+                            r"(?:^|_)ses-([^_]+)",
+                            run_id
+                        )
+                        else None
+                    ),
 
                     "task": task_name,
 
@@ -533,27 +599,22 @@ def create_fir_matrices(
 
                 })
 
-        # Concatenate all runs vertically
+            subject_scan_info[subject][run_id] = (
+                pd.DataFrame(scan_info_rows)
+            )
 
-        G_subject = np.vstack(run_matrices)
-
-        subject_matrices[subject] = G_subject
-
-        subject_scan_info[subject] = pd.DataFrame(
-            scan_info_rows
-        )
-
-        print(
-            f"Final matrix for {subject}: "
-            f"{G_subject.shape}"
-        )
+            print(
+                f"Run matrix: {G_run.shape}"
+            )
 
     return subject_matrices, subject_scan_info
+
 
 
 # ============================================================
 # 10. SAVE INDIVIDUAL SUBJECT MATRICES
 # ============================================================
+
 
 def save_subject_matrices(
     subject_matrices,
@@ -566,47 +627,98 @@ def save_subject_matrices(
         exist_ok=True
     )
 
-    for subject, G in subject_matrices.items():
+    for subject, runs in subject_matrices.items():
 
-        subject_dir = OUTPUT_DIR / subject
+        for run_id, G in runs.items():
 
-        subject_dir.mkdir(
-            parents=True,
-            exist_ok=True
-        )
+            # Extract session and task identifiers
 
-        # Save NumPy matrix
+            ses_match = re.search(
+                r"(?:^|_)ses-([^_]+)",
+                run_id
+            )
 
-        np.save(
-            subject_dir / "fir_matrix.npy",
-            G
-        )
+            task_match = re.search(
+                r"(?:^|_)task-([^_]+)",
+                run_id
+            )
 
-        # Save CSV matrix
+            run_match = re.search(
+                r"(?:^|_)run-([^_]+)",
+                run_id
+            )
 
-        df = pd.DataFrame(
-            G,
-            columns=column_names
-        )
+            # Construct output directory
 
-        df.to_csv(
-            subject_dir / "fir_matrix.csv",
-            index=False
-        )
+            subject_dir = OUTPUT_DIR / subject
 
-        # Save scan information
+            if ses_match:
 
-        subject_scan_info[subject].to_csv(
-            subject_dir / "scan_info.csv",
-            index=False
-        )
+                subject_dir = (
+                    subject_dir /
+                    f"ses-{ses_match.group(1)}"
+                )
 
-        print(f"Saved {subject}: {G.shape}")
+            if task_match:
+
+                subject_dir = (
+                    subject_dir /
+                    f"task-{task_match.group(1)}"
+                )
+
+            subject_dir.mkdir(
+                parents=True,
+                exist_ok=True
+            )
+
+            # Construct filename
+
+            if run_match:
+
+                filename = (
+                    f"run-{run_match.group(1)}_fir_matrix"
+                )
+
+            else:
+
+                filename = "fir_matrix"
+
+            # Save NumPy matrix
+
+            np.save(
+                subject_dir / f"{filename}.npy",
+                G
+            )
+
+            # Save CSV matrix
+
+            df = pd.DataFrame(
+                G,
+                columns=column_names
+            )
+
+            df.to_csv(
+                subject_dir / f"{filename}.csv",
+                index=False
+            )
+
+            # Save scan information
+
+            subject_scan_info[subject][run_id].to_csv(
+                subject_dir / f"{filename}_scan_info.csv",
+                index=False
+            )
+
+            print(
+                f"Saved {subject} {run_id}: {G.shape}"
+            )
+
 
 
 # ============================================================
 # 11. SAVE METADATA
 # ============================================================
+
 
 def save_metadata(
     subjects,
@@ -670,15 +782,18 @@ def save_metadata(
                 f.write(f"  Conditions: {', '.join(active)}\n")
                 f.write(f"  File: {info['file'].name}\n")
 
-        f.write("\nSUBJECT FIR MATRIX DIMENSIONS\n")
+        f.write("\nINDIVIDUAL FIR MATRIX DIMENSIONS\n")
         f.write("-" * 55 + "\n")
 
-        for subject, G in subject_matrices.items():
+        for subject, runs in subject_matrices.items():
 
-            f.write(
-                f"{subject}: "
-                f"{G.shape[0]} x {G.shape[1]}\n"
-            )
+            for run_id, G in runs.items():
+
+                f.write(
+                    f"{subject} {run_id}: "
+                    f"{G.shape[0]} x {G.shape[1]}\n"
+                )
+
 
 
 # ============================================================
@@ -765,9 +880,13 @@ def main():
     print("FIR GENERATION COMPLETED")
     print("=" * 60)
 
-    for subject, G in subject_matrices.items():
+    for subject, runs in subject_matrices.items():
 
-        print(f"{subject}: {G.shape}")
+        print(f"\n{subject}")
+
+        for run_id, G in runs.items():
+
+            print(f"  {run_id}: {G.shape}")
 
     print(f"\nOutput directory: {OUTPUT_DIR}")
 
