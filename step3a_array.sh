@@ -14,10 +14,10 @@
 # ============================================================
 
 # Load Python environment
-# Uncomment and modify if necessary
 
-# module load python
-source ~/my_environment/bin/activate
+REPO_DIR="/scratch/st-toddwood-1/$USER/fmri-cpca_python"
+
+source "$REPO_DIR/fmri_env/bin/activate"
 
 echo "=========================================="
 echo "STEP 3a: RUN-LEVEL GZ CALCULATION"
