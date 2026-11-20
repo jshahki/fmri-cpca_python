@@ -6,6 +6,8 @@
 #SBATCH --time=04:00:00
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=1
+#SBATCH --nodes=1
+#SBATCH --account=st-toddwood-1
 
 # ============================================================
 # STEP 3b: SUBJECT-LEVEL FIR REGRESSION
