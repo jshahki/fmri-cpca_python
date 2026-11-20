@@ -15,13 +15,13 @@ import pandas as pd
 # CONFIGURATION
 # ============================================================
 
-G_DIR = Path("fir_output")
+G_DIR = Path("/scratch/st-toddwood-1/jshahki/fmri-cpca_python/fir_output")
 
-GZ_DIR = Path("step3a_output")
+GZ_DIR = Path("/scratch/st-toddwood-1/jshahki/fmri-cpca_python/step3a_output")
 
-OUTPUT_DIR = Path("step3b_output")
+OUTPUT_DIR = Path("/scratch/st-toddwood-1/jshahki/fmri-cpca_python/step3b_output")
 
-MANIFEST_FILE = Path("step3b_subject_manifest.json")
+MANIFEST_FILE = Path("/scratch/st-toddwood-1/jshahki/step3b_subject_manifest.json")
 
 DTYPE = np.float64
 
