@@ -43,71 +43,52 @@ def natural_sort(items):
 def extract_run_id(filename):
 
     """
-    Extract session, task and run identifiers
-    regardless of their position in the filename.
+    Extract session, task and run identifiers.
 
-    Examples:
+    Standardized order:
+        ses -> task -> run
 
-    sub-01_task-emotion_bold.nii.gz
-        -> task-emotion
-
-    sub-01_task-emotion_run-1_bold.nii.gz
-        -> task-emotion_run-1
-
-    sub-01_task-emotion_ses-A_run-2_MNI_desc_bold.nii.gz
-        -> ses-A_task-emotion_run-2
+    Subject is identified from the parent directory.
     """
 
     name = Path(filename).name
 
-    # Extract optional session identifier
+    # Remove NIfTI extension
+    if name.endswith(".nii.gz"):
+        name = name[:-7]
+    else:
+        name = Path(name).stem
 
-    ses_match = re.search(
-        r"(?:^|_)ses-([^_]+)(?:_|$)",
-        name
-    )
+    # Entities to retain
+    desired_entities = ["ses", "task", "run"]
 
-    # Extract task identifier
+    extracted = {}
 
-    task_match = re.search(
-        r"(?:^|_)task-([^_]+)(?:_|$)",
-        name
-    )
+    for entity in desired_entities:
 
-    # Extract optional run identifier
+        match = re.search(
+            rf"(?:^|_){entity}-([^_]+)",
+            name
+        )
 
-    run_match = re.search(
-        r"(?:^|_)run-([^_]+)(?:_|$)",
-        name
-    )
+        if match:
+            extracted[entity] = match.group(1)
 
-    if not task_match:
+    # Task is required
+    if "task" not in extracted:
 
         raise ValueError(
             f"No task identifier found in filename: {name}"
         )
 
     # Construct standardized identifier
-
-    parts = []
-
-    if ses_match:
-
-        parts.append(
-            f"ses-{ses_match.group(1)}"
-        )
-
-    parts.append(
-        f"task-{task_match.group(1)}"
+    run_id = "_".join(
+        f"{entity}-{extracted[entity]}"
+        for entity in desired_entities
+        if entity in extracted
     )
 
-    if run_match:
-
-        parts.append(
-            f"run-{run_match.group(1)}"
-        )
-
-    return "_".join(parts)
+    return run_id
 
 
 
