@@ -1,5 +1,7 @@
 mkdir -p logs
 
+source ~/my_environment/bin/activate
+
 python step3a.py --create-manifest
 
 N=$(python -c "
