@@ -17,7 +17,7 @@ import pandas as pd
 
 G_DIR = Path("/scratch/st-toddwood-1/jshahki/fmri-cpca_python/fir_output")
 
-GZ_DIR = Path("/scratch/st-toddwood-1/jshahki/fmri-cpca_python/step3a_output")
+GZ_DIR = Path("/scratch/st-toddwood-1/jshahki/fmri-cpca_python/step3_output")
 
 OUTPUT_DIR = Path("/scratch/st-toddwood-1/jshahki/fmri-cpca_python/step3b_output")
 
