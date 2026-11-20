@@ -12,13 +12,13 @@ import numpy as np
 
 # CHANGE THESE PATHS TO MATCH YOUR STEP 1 AND STEP 2b OUTPUTS
 
-Z_DIR = Path("step1_output")
+Z_DIR = Path("/scratch/st-toddwood-1/jshahki/fmri-cpca_python/vectorized_output")
 
-G_DIR = Path("fir_output")
+G_DIR = Path("/scratch/st-toddwood-1/jshahki/fmri-cpca_python/fir_output")
 
-OUTPUT_DIR = Path("step3_output")
+OUTPUT_DIR = Path("/scratch/st-toddwood-1/jshahki/fmri-cpca_python/step3_output")
 
-MANIFEST_FILE = Path("step3_run_manifest.json")
+MANIFEST_FILE = Path("/scratch/st-toddwood-1/jshahki/fmri-cpca_python/step3_run_manifest.json")
 
 
 # ============================================================
