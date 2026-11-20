@@ -7,6 +7,7 @@
 #SBATCH --mem=16G
 #SBATCH --cpus-per-task=1
 #SBATCH --nodes=1
+#SBATCH --account=st-toddwood-1
 
 # ============================================================
 # STAGE 1: RUN-LEVEL GZ CALCULATIONS
