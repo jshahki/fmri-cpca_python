@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 
 import re
@@ -32,7 +33,57 @@ def natural_sort(items):
 
 
 # ============================================================
-# 2. LOAD OPTIONAL BRAIN MASK
+# 2. EXTRACT SELECTED BIDS ENTITIES FROM FILENAME
+# ============================================================
+
+def extract_bids_entities(filename):
+
+    """
+    Extract only the following BIDS entities, if present:
+        sub, ses, task, run
+
+    Preserve their original values and ordering.
+    Ignore all other filename components.
+    """
+
+    # Remove NIfTI extension
+    if filename.endswith(".nii.gz"):
+        filename = filename[:-7]
+    else:
+        filename = Path(filename).stem
+
+    # Entities to retain, in desired order
+    desired_entities = ["sub", "ses", "task", "run"]
+
+    extracted = {}
+
+    for entity in desired_entities:
+
+        match = re.search(
+            rf"(?:^|_){entity}-([^_]+)",
+            filename
+        )
+
+        if match:
+            extracted[entity] = match.group(1)
+
+    # Construct output filename
+    output_name = "_".join(
+        f"{entity}-{extracted[entity]}"
+        for entity in desired_entities
+        if entity in extracted
+    )
+
+    if not output_name:
+        raise ValueError(
+            f"No recognized BIDS entities found in: {filename}"
+        )
+
+    return output_name
+
+
+# ============================================================
+# 3. LOAD OPTIONAL BRAIN MASK
 # ============================================================
 
 def load_mask(mask_file):
@@ -62,7 +113,7 @@ def load_mask(mask_file):
 
 
 # ============================================================
-# 3. VECTORIZE AND NORMALIZE ONE FMRI RUN
+# 4. VECTORIZE AND NORMALIZE ONE FMRI RUN
 # ============================================================
 
 def vectorize_fmri(
@@ -72,6 +123,7 @@ def vectorize_fmri(
 ):
 
     input_file = Path(input_file)
+    output_dir = Path(output_dir)
 
     print("\n" + "=" * 60)
     print(f"Processing: {input_file.name}")
@@ -195,26 +247,23 @@ def vectorize_fmri(
     # CREATE OUTPUT FILENAMES
     # --------------------------------------------------------
 
-    filename = input_file.name
+    # Extract selected BIDS entities
+    filename = extract_bids_entities(input_file.name)
 
-    if filename.endswith(".nii.gz"):
-        filename = filename[:-7]
-    else:
-        filename = input_file.stem
-
+    # Construct output filenames
     output_file = (
         output_dir /
-        f"{filename}_vectorized_normalized.npy"
+        f"{filename}_Z.npy"
     )
 
     metadata_file = (
         output_dir /
-        f"{filename}_metadata.npz"
+        f"{filename}_Z_metadata.npz"
     )
 
     normalization_file = (
         output_dir /
-        f"{filename}_normalization_parameters.npz"
+        f"{filename}_Z_normalization_parameters.npz"
     )
 
     # --------------------------------------------------------
@@ -291,7 +340,7 @@ def vectorize_fmri(
 
 
 # ============================================================
-# 4. PROCESS ALL SUBJECTS AND RUNS
+# 5. PROCESS ALL SUBJECTS AND RUNS
 # ============================================================
 
 def process_dataset(
@@ -311,7 +360,6 @@ def process_dataset(
         )
 
     # Load optional mask once
-
     mask_info = load_mask(mask_file)
 
     total_files = 0
@@ -331,7 +379,6 @@ def process_dataset(
             )
 
         # Identify subject from parent directory
-
         subject = single_file.parent.name
 
         print("\n")
@@ -342,7 +389,6 @@ def process_dataset(
         print(f"Processing single run: {single_file.name}")
 
         # Create subject output directory
-
         subject_output_dir = output_dir / subject
 
         subject_output_dir.mkdir(
@@ -351,7 +397,6 @@ def process_dataset(
         )
 
         # Process only the assigned run
-
         vectorize_fmri(
             single_file,
             subject_output_dir,
@@ -369,7 +414,6 @@ def process_dataset(
     else:
 
         # Find subjects
-
         subject_dirs = natural_sort([
 
             p for p in data_dir.iterdir()
@@ -387,7 +431,6 @@ def process_dataset(
         n_subjects = len(subject_dirs)
 
         # Process each subject
-
         for subject_dir in subject_dirs:
 
             subject = subject_dir.name
@@ -398,7 +441,6 @@ def process_dataset(
             print("#" * 60)
 
             # Find NIfTI files
-
             nii_files = natural_sort(
 
                 list(subject_dir.glob("*.nii.gz"))
@@ -415,7 +457,6 @@ def process_dataset(
                 continue
 
             # Create subject output directory
-
             subject_output_dir = output_dir / subject
 
             subject_output_dir.mkdir(
@@ -424,7 +465,6 @@ def process_dataset(
             )
 
             # Process each run independently
-
             for nii_file in nii_files:
 
                 vectorize_fmri(
@@ -454,8 +494,10 @@ def process_dataset(
     print(f"Output directory: {output_dir}")
 
 
+
+
 # ============================================================
-# 5. RECONSTRUCT NORMALIZED MATRIX INTO NIFTI
+# 6. RECONSTRUCT NORMALIZED MATRIX INTO NIFTI
 # ============================================================
 
 def reconstruct_nifti(
@@ -567,7 +609,7 @@ def reconstruct_nifti(
 
 
 # ============================================================
-# 6. MAIN
+# 7. MAIN
 # ============================================================
 
 def main():
