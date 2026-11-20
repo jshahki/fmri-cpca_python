@@ -21,7 +21,7 @@ GZ_DIR = Path("/scratch/st-toddwood-1/jshahki/fmri-cpca_python/step3_output")
 
 OUTPUT_DIR = Path("/scratch/st-toddwood-1/jshahki/fmri-cpca_python/step3b_output")
 
-MANIFEST_FILE = Path("/scratch/st-toddwood-1/jshahki/step3b_subject_manifest.json")
+MANIFEST_FILE = Path("/scratch/st-toddwood-1/jshahki/fmri-cpca_python/step3b_subject_manifest.json")
 
 DTYPE = np.float64
 
