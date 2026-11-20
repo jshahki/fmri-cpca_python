@@ -613,6 +613,267 @@ def create_fir_matrices(
 
 
 # ============================================================
+# 10. CREATE SUBJECT-LEVEL G AND gg MATRICES
+# ============================================================
+
+def create_subject_level_matrices(
+    subject_matrices,
+    column_names
+):
+    """
+    Create one subject-level G matrix by vertically
+    concatenating all run-level G matrices.
+
+    Remove columns that are completely inactive for
+    that subject.
+
+    Calculate:
+
+        gg = (G.T @ G)^(-1/2)
+
+    The resulting gg matrix is shared across all runs
+    belonging to the subject.
+
+    Returns
+    -------
+    subject_G : dict
+        Subject-level design matrices.
+
+    subject_gg : dict
+        Subject-level normalization matrices.
+
+    active_columns : dict
+        Zero-based indices of columns retained from
+        the original global FIR design.
+    """
+
+    subject_G = {}
+    subject_gg = {}
+    active_columns = {}
+
+    for subject, runs in subject_matrices.items():
+
+        print(
+            f"\nCreating subject-level G for {subject}"
+        )
+
+        # ------------------------------------------------
+        # MATRIX OPERATION 1:
+        # Vertically concatenate all run-level G matrices
+        # ------------------------------------------------
+
+        G_full = np.vstack([
+            G
+            for G in runs.values()
+        ])
+
+        print(
+            f"Combined G dimensions: {G_full.shape}"
+        )
+
+        # ------------------------------------------------
+        # MATRIX OPERATION 2:
+        # Identify active FIR columns
+        # ------------------------------------------------
+
+        active = np.flatnonzero(
+            np.any(G_full != 0, axis=0)
+        )
+
+        if len(active) == 0:
+
+            raise ValueError(
+                f"No active FIR columns for {subject}"
+            )
+
+        # Retain only columns containing design information
+
+        G_subject = G_full[:, active]
+
+        # ------------------------------------------------
+        # MATRIX OPERATION 3:
+        # Calculate the Gram matrix
+        #
+        # Gram = G.T @ G
+        # ------------------------------------------------
+
+        Gram = G_subject.T @ G_subject
+
+        # Ensure numerical symmetry
+
+        Gram = (Gram + Gram.T) / 2.0
+
+        # ------------------------------------------------
+        # MATRIX OPERATION 4:
+        # Eigenvalue decomposition of Gram
+        #
+        # Gram = V @ diag(w) @ V.T
+        # ------------------------------------------------
+
+        eigenvalues, eigenvectors = np.linalg.eigh(
+            Gram
+        )
+
+        max_eigenvalue = np.max(eigenvalues)
+
+        tolerance = (
+            np.finfo(np.float64).eps
+            * max(Gram.shape)
+            * max_eigenvalue
+        )
+
+        if np.any(eigenvalues <= tolerance):
+
+            raise ValueError(
+                f"Subject-level G is rank deficient "
+                f"for {subject}.\n"
+                f"Smallest eigenvalue: "
+                f"{np.min(eigenvalues)}\n"
+                f"Tolerance: {tolerance}\n"
+                "Check for redundant or collinear FIR "
+                "columns in the subject's design."
+            )
+
+        # ------------------------------------------------
+        # MATRIX OPERATION 5:
+        # Calculate symmetric inverse square root
+        #
+        # gg = V @ diag(1/sqrt(w)) @ V.T
+        # ------------------------------------------------
+
+        inverse_sqrt_eigenvalues = (
+            1.0 / np.sqrt(eigenvalues)
+        )
+
+        gg = (
+            eigenvectors
+            * inverse_sqrt_eigenvalues[np.newaxis, :]
+        ) @ eigenvectors.T
+
+        # ------------------------------------------------
+        # Store subject-level matrices
+        # ------------------------------------------------
+
+        subject_G[subject] = G_subject
+
+        subject_gg[subject] = gg
+
+        active_columns[subject] = active
+
+        print(
+            f"Subject-level G: {G_subject.shape}"
+        )
+
+        print(
+            f"Subject-level gg: {gg.shape}"
+        )
+
+        print(
+            f"Active FIR columns: {len(active)}"
+        )
+
+        print(
+            "Subject-level normalization completed."
+        )
+
+    return (
+        subject_G,
+        subject_gg,
+        active_columns
+    )
+
+
+# ============================================================
+# 11. SAVE SUBJECT-LEVEL G AND gg MATRICES
+# ============================================================
+
+def save_subject_level_matrices(
+    subject_G,
+    subject_gg,
+    active_columns,
+    column_names
+):
+
+    OUTPUT_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    for subject in subject_G:
+
+        subject_dir = OUTPUT_DIR / subject
+
+        subject_dir.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        G = subject_G[subject]
+
+        gg = subject_gg[subject]
+
+        active = active_columns[subject]
+
+        # ------------------------------------------------
+        # Save subject-level G
+        # ------------------------------------------------
+
+        np.save(
+            subject_dir / f"{subject}_G.npy",
+            G
+        )
+
+        G_df = pd.DataFrame(
+            G,
+            columns=[
+                column_names[i]
+                for i in active
+            ]
+        )
+
+        G_df.to_csv(
+            subject_dir / f"{subject}_G.csv",
+            index=False
+        )
+
+        # ------------------------------------------------
+        # Save subject-level gg
+        # ------------------------------------------------
+
+        np.save(
+            subject_dir / f"{subject}_gg.npy",
+            gg
+        )
+
+        # ------------------------------------------------
+        # Save active column indices
+        # ------------------------------------------------
+
+        np.save(
+            subject_dir / f"{subject}_active_columns.npy",
+            active
+        )
+
+        print(
+            f"\nSaved subject-level matrices: {subject}"
+        )
+
+        print(
+            f"  G: {G.shape}"
+        )
+
+        print(
+            f"  gg: {gg.shape}"
+        )
+
+        print(
+            f"  Active columns: {len(active)}"
+        )
+
+
+
+
+# ============================================================
 # 10. SAVE INDIVIDUAL SUBJECT MATRICES
 # ============================================================
 
@@ -848,6 +1109,28 @@ def main():
         condition_columns
     )
 
+
+    # Create subject-level G and gg matrices
+
+    (
+        subject_G,
+        subject_gg,
+        active_columns
+    ) = create_subject_level_matrices(
+        subject_matrices,
+        column_names
+    )
+
+    # Save subject-level matrices
+
+    save_subject_level_matrices(
+        subject_G,
+        subject_gg,
+        active_columns,
+        column_names
+    )
+
+    
     # Save individual subject matrices
 
     save_subject_matrices(
