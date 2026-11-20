@@ -153,9 +153,32 @@ def load_subject_G(subject_dir):
     return G, gg, G_file, gg_file
 
 
+
 # ============================================================
-# 4. FIND RUN-LEVEL GZ FILES
+# 4. FIND GZ FILES AND EXTRACT BIDS ENTITIES
 # ============================================================
+
+def extract_bids_entities(filename):
+
+    name = Path(filename).stem
+
+    entities = {}
+
+    for entity in ["sub", "ses", "task", "run"]:
+
+        match = re.search(
+            rf"(?:^|_){entity}-([^_]+)",
+            name
+        )
+
+        entities[entity] = (
+            match.group(1)
+            if match
+            else None
+        )
+
+    return entities
+
 
 def find_GZ_files(subject):
 
@@ -168,92 +191,119 @@ def find_GZ_files(subject):
         )
 
     files = natural_sort(
-        list(subject_dir.glob("*GZ*.npy"))
+        list(subject_dir.glob("*_GZ.npy"))
     )
-
-    # Exclude any accidental non-run files.
-    files = [
-        f for f in files
-        if re.search(r"_GZ_R\d+\.npy$", f.name)
-    ]
 
     if not files:
 
         raise FileNotFoundError(
-            f"No run-level GZ matrices found for {subject}"
+            f"No GZ matrices found for {subject}"
         )
+
+    print(
+        f"\nFound {len(files)} GZ matrices for {subject}"
+    )
+
+    for f in files:
+
+        entities = extract_bids_entities(f.name)
+
+        if entities["sub"] != subject.replace("sub-", ""):
+
+            raise ValueError(
+                f"Subject mismatch: {f.name}"
+            )
+
+        print(f"  {f.name}")
 
     return files
 
 
 def extract_run_suffix(filename):
 
-    match = re.search(
-        r"_(task-.+)_GZ_R(\d+)\.npy$",
-        filename
+    entities = extract_bids_entities(filename)
+
+    task_suffix = (
+        f"task-{entities['task']}"
+        if entities["task"] is not None
+        else None
     )
 
-    if match:
+    # Preserve the original filename.
+    # Use run 1 internally when no run label exists.
 
-        return (
-            match.group(1),
-            int(match.group(2))
-        )
-
-    match = re.search(
-        r"_GZ_R(\d+)\.npy$",
-        filename
+    run_number = (
+        int(entities["run"])
+        if entities["run"] is not None
+        else 1
     )
 
-    if match:
+    return task_suffix, run_number
 
-        return (
-            None,
-            int(match.group(1))
-        )
 
-    raise ValueError(
-        f"Could not identify run number: {filename}"
-    )
 
 
 # ============================================================
-# 5. LOAD RUN-LEVEL G MATRIX
+# 5. LOAD MATCHING RUN-LEVEL G MATRIX
 # ============================================================
 
-def find_run_G(subject_dir, task_suffix, run_number):
+def find_run_G(
+    subject_dir,
+    task_suffix,
+    run_number,
+    gz_file=None
+):
 
-    subject = subject_dir.name
+    if gz_file is None:
 
-    candidates = []
-
-    if task_suffix:
-
-        candidates.append(
-            subject_dir /
-            f"{subject}_{task_suffix}_run-{run_number}_G.npy"
+        raise ValueError(
+            "GZ filename is required for matching G."
         )
 
-    candidates.append(
-        subject_dir /
-        f"{subject}_G_R{run_number}.npy"
+    gz_entities = extract_bids_entities(
+        gz_file.name
     )
 
-    candidates.extend(
-        subject_dir.glob(
-            f"*run-{run_number}_G.npy"
-        )
+    candidates = natural_sort(
+        list(subject_dir.glob("*_G.npy"))
     )
+
+    matches = []
 
     for candidate in candidates:
 
-        if candidate.exists():
-            return candidate
+        g_entities = extract_bids_entities(
+            candidate.name
+        )
 
-    raise FileNotFoundError(
-        f"Could not find run-level G for "
-        f"{subject}, run {run_number}"
+        # Match only entities that exist in the GZ filename.
+        #
+        # Missing entities must also be missing in G.
+        # No labels are added or inferred.
+
+        if all(
+            g_entities[key] == gz_entities[key]
+            for key in ["sub", "ses", "task", "run"]
+        ):
+
+            matches.append(candidate)
+
+    if len(matches) == 1:
+
+        return matches[0]
+
+    if len(matches) == 0:
+
+        raise FileNotFoundError(
+            f"No matching G matrix found for:\n"
+            f"{gz_file.name}"
+        )
+
+    raise ValueError(
+        f"Multiple matching G matrices found:\n"
+        + "\n".join(str(f) for f in matches)
     )
+
 
 
 # ============================================================
@@ -724,7 +774,8 @@ def process_run_GC(
         G_file = find_run_G(
             G_DIR / subject,
             task_suffix,
-            run_number
+            run_number,
+            gz_file=Path(result["GZ_file"])
         )
 
         G_run = np.load(
