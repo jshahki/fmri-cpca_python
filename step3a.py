@@ -25,55 +25,66 @@ MANIFEST_FILE = Path("/scratch/st-toddwood-1/jshahki/fmri-cpca_python/step3_run_
 # 1. EXTRACT BIDS IDENTIFIERS
 # ============================================================
 
+
 def extract_entities(filename):
     """
-    Extract the following identifiers when present:
+    Extract BIDS-style entities from a matrix filename.
 
-        sub
-        ses
-        task
-        run
+    The suffix (_Z or _G) is removed before parsing.
 
-    The order in the original filename does not matter.
+    Examples:
+        sub-c01_task-semanticassociation_Z.npy
+        sub-c01_task-semanticassociation_G.npy
 
-    Example:
+        sub-c01_ses-01_task-rest_run-01_Z.npy
+        sub-c01_ses-01_task-rest_run-01_G.npy
 
-        sr_sub-c01_ses-A_task-semanticassociation_
-        space-MNI152NLin2009cAsym_run-1_desc-preproc_bold_Z.npy
-
-    Returns:
-
-        sub-c01_ses-A_task-semanticassociation_run-1
+    Missing entities remain absent.
     """
 
-    name = Path(filename).name
+    stem = Path(filename).stem
+
+    # Remove matrix suffix.
+    stem = re.sub(r"_(Z|G)$", "", stem)
 
     entities = {}
 
-    for entity in ["sub", "ses", "task", "run"]:
+    for entity in stem.split("_"):
 
-        match = re.search(
-            rf"(?:^|_){entity}-([^_]+)",
-            name
-        )
+        if "-" not in entity:
+            continue
 
-        if match:
-            entities[entity] = match.group(1)
+        key, value = entity.split("-", 1)
+
+        if key in ("sub", "ses", "task", "run", "acq", "rec", "dir", "echo"):
+            entities[key] = value
 
     if "sub" not in entities:
         raise ValueError(
             f"No subject identifier found: {filename}"
         )
 
-    # Construct standardized identifier
+    # Include only entities actually present.
+    # This preserves the distinction between missing labels
+    # and explicitly provided labels.
 
-    identifier = "_".join(
-        f"{entity}-{entities[entity]}"
-        for entity in ["sub", "ses", "task", "run"]
-        if entity in entities
+    ordered_keys = [
+        "sub",
+        "ses",
+        "task",
+        "acq",
+        "rec",
+        "dir",
+        "run",
+        "echo"
+    ]
+
+    return tuple(
+        (key, entities[key])
+        for key in ordered_keys
+        if key in entities
     )
 
-    return identifier
 
 
 # ============================================================
@@ -113,57 +124,63 @@ def find_input_files(directory, suffix):
 # 3. CREATE RUN-LEVEL MANIFEST
 # ============================================================
 
+
 def create_manifest():
 
     print("\nScanning input directories...")
 
-    z_files = find_input_files(
-        Z_DIR,
-        "Z"
-    )
-
-    g_files = find_input_files(
-        G_DIR,
-        "G"
-    )
+    z_files = find_input_files(Z_DIR, "Z")
+    g_files = [
+        f for f in find_input_files(G_DIR, "G")
+        if len(extract_entities(f)) > 1
+    ]
 
     print(f"Found Z matrices: {len(z_files)}")
     print(f"Found G matrices: {len(g_files)}")
 
-    # Index files using standardized identifiers
-
     z_index = {}
     g_index = {}
+
+    # --------------------------------------------------------
+    # INDEX Z MATRICES
+    # --------------------------------------------------------
 
     for filename in z_files:
 
         identifier = extract_entities(filename)
 
         if identifier in z_index:
-
             raise ValueError(
                 f"Duplicate Z identifier: {identifier}\n"
-                f"{z_index[identifier]}\n"
-                f"{filename}"
+                f"{z_index[identifier]}\n{filename}"
             )
 
         z_index[identifier] = filename
+
+    # --------------------------------------------------------
+    # INDEX TASK/RUN-LEVEL G MATRICES
+    #
+    # Exclude subject-level G files such as:
+    # sub-c01_G.npy
+    #
+    # These belong to Step 2b and must not be matched here.
+    # --------------------------------------------------------
 
     for filename in g_files:
 
         identifier = extract_entities(filename)
 
         if identifier in g_index:
-
             raise ValueError(
                 f"Duplicate G identifier: {identifier}\n"
-                f"{g_index[identifier]}\n"
-                f"{filename}"
+                f"{g_index[identifier]}\n{filename}"
             )
 
         g_index[identifier] = filename
 
-    # Verify matching input files
+    # --------------------------------------------------------
+    # VERIFY ONE-TO-ONE MATCHING
+    # --------------------------------------------------------
 
     z_identifiers = set(z_index)
     g_identifiers = set(g_index)
@@ -172,20 +189,20 @@ def create_manifest():
     missing_z = g_identifiers - z_identifiers
 
     if missing_g:
-
         raise ValueError(
-            "Missing G matrices for:\n" +
-            "\n".join(sorted(missing_g))
+            "Missing task/run-level G matrices for:\n" +
+            "\n".join(map(str, sorted(missing_g)))
         )
 
     if missing_z:
-
         raise ValueError(
-            "Missing Z matrices for:\n" +
-            "\n".join(sorted(missing_z))
+            "G matrices without matching Z matrices:\n" +
+            "\n".join(map(str, sorted(missing_z)))
         )
 
-    # Create manifest
+    # --------------------------------------------------------
+    # CREATE MANIFEST
+    # --------------------------------------------------------
 
     manifest = []
 
@@ -215,11 +232,15 @@ def create_manifest():
 
     print("\nManifest successfully created.")
 
-    print(f"Total subject/run combinations: {len(manifest)}")
+    print(
+        f"Total subject/task/run combinations: {len(manifest)}"
+    )
 
     print(f"Manifest: {MANIFEST_FILE}")
 
     return manifest
+
+
 
 
 # ============================================================
@@ -320,35 +341,38 @@ def calculate_GZ(
     return GZ
 
 
+
 # ============================================================
 # 6. SAVE RUN-LEVEL GZ
 # ============================================================
 
-def save_GZ(
-    identifier,
-    GZ
-):
+def save_GZ(identifier, GZ):
     """
     Save each GZ matrix separately.
 
-    Output structure:
-
-        step3_output/
-            sub-c01/
-                sub-c01_task-rest_run-1_GZ.npy
+    Preserve the original Z filename and all existing BIDS labels.
     """
 
-    # Extract subject identifier
+    # Ensure identifier is a string.
+    if not isinstance(identifier, str):
+        raise TypeError(
+            f"Expected string identifier, got {type(identifier)}"
+        )
 
+    # Extract subject identifier.
     subject_match = re.search(
         r"(?:^|_)(sub-[^_]+)",
         identifier
     )
 
+    if subject_match is None:
+        raise ValueError(
+            f"Could not identify subject in: {identifier}"
+        )
+
     subject = subject_match.group(1)
 
-    # Create subject directory
-
+    # Create subject directory.
     subject_dir = OUTPUT_DIR / subject
 
     subject_dir.mkdir(
@@ -356,23 +380,22 @@ def save_GZ(
         exist_ok=True
     )
 
-    # Construct filename
-
+    # Construct output filename.
     output_file = (
         subject_dir /
         f"{identifier}_GZ.npy"
     )
 
-    # Save matrix
-
+    # Save matrix.
     np.save(
         output_file,
         GZ
     )
 
     print(f"\nSaved: {output_file}")
-
     print(f"Output dimensions: {GZ.shape}")
+
+
 
 
 # ============================================================
@@ -392,7 +415,12 @@ def process_run(index):
 
     run = manifest[index]
 
-    identifier = run["identifier"]
+    # Recover the original filename from the Z matrix.
+    # Remove only the final _Z suffix.
+    identifier = Path(run["z_file"]).stem
+
+    if identifier.endswith("_Z"):
+        identifier = identifier[:-2]
 
     g_file = Path(run["g_file"])
 
