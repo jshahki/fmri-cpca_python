@@ -6,6 +6,7 @@
 #SBATCH --time=02:00:00
 #SBATCH --mem=16G
 #SBATCH --cpus-per-task=1
+#SBATCH --nodes=1
 
 # ============================================================
 # STAGE 1: RUN-LEVEL GZ CALCULATIONS
