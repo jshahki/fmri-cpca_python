@@ -611,10 +611,10 @@ def create_fir_matrices(
 
 
 
+
 # ============================================================
 # 10. SAVE INDIVIDUAL SUBJECT MATRICES
 # ============================================================
-
 
 def save_subject_matrices(
     subject_matrices,
@@ -629,68 +629,52 @@ def save_subject_matrices(
 
     for subject, runs in subject_matrices.items():
 
+        # All outputs go directly into the subject folder
+        subject_dir = OUTPUT_DIR / subject
+
+        subject_dir.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
         for run_id, G in runs.items():
 
-            # Extract session and task identifiers
+            # ------------------------------------------------
+            # EXTRACT AVAILABLE IDENTIFIERS
+            # ------------------------------------------------
 
-            ses_match = re.search(
-                r"(?:^|_)ses-([^_]+)",
-                run_id
-            )
+            filename_parts = [subject]
 
-            task_match = re.search(
-                r"(?:^|_)task-([^_]+)",
-                run_id
-            )
+            for entity in ["ses", "task", "run"]:
 
-            run_match = re.search(
-                r"(?:^|_)run-([^_]+)",
-                run_id
-            )
-
-            # Construct output directory
-
-            subject_dir = OUTPUT_DIR / subject
-
-            if ses_match:
-
-                subject_dir = (
-                    subject_dir /
-                    f"ses-{ses_match.group(1)}"
+                match = re.search(
+                    rf"(?:^|_){entity}-([^_]+)",
+                    run_id
                 )
 
-            if task_match:
+                if match:
 
-                subject_dir = (
-                    subject_dir /
-                    f"task-{task_match.group(1)}"
-                )
+                    filename_parts.append(
+                        f"{entity}-{match.group(1)}"
+                    )
 
-            subject_dir.mkdir(
-                parents=True,
-                exist_ok=True
-            )
+            # Construct standardized filename
+            filename_prefix = "_".join(filename_parts)
 
-            # Construct filename
+            filename = f"{filename_prefix}_G"
 
-            if run_match:
-
-                filename = (
-                    f"run-{run_match.group(1)}_fir_matrix"
-                )
-
-            else:
-
-                filename = "fir_matrix"
-
-            # Save NumPy matrix
+            # ------------------------------------------------
+            # SAVE NUMPY MATRIX
+            # ------------------------------------------------
 
             np.save(
                 subject_dir / f"{filename}.npy",
                 G
             )
 
-            # Save CSV matrix
+            # ------------------------------------------------
+            # SAVE CSV MATRIX
+            # ------------------------------------------------
 
             df = pd.DataFrame(
                 G,
@@ -702,7 +686,9 @@ def save_subject_matrices(
                 index=False
             )
 
-            # Save scan information
+            # ------------------------------------------------
+            # SAVE SCAN INFORMATION
+            # ------------------------------------------------
 
             subject_scan_info[subject][run_id].to_csv(
                 subject_dir / f"{filename}_scan_info.csv",
@@ -711,6 +697,10 @@ def save_subject_matrices(
 
             print(
                 f"Saved {subject} {run_id}: {G.shape}"
+            )
+
+            print(
+                f"Output directory: {subject_dir}"
             )
 
 
