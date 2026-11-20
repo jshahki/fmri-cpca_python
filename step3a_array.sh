@@ -17,7 +17,7 @@
 # Uncomment and modify if necessary
 
 # module load python
-# source ~/my_environment/bin/activate
+source ~/my_environment/bin/activate
 
 echo "=========================================="
 echo "STEP 3a: RUN-LEVEL GZ CALCULATION"
